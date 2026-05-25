@@ -15,6 +15,7 @@
 | 实际结果 | Actual Result | actualResult |
 | 复现率 | Reproduce Rate | reproduceRate |
 | Recover步骤 | Recover Steps | recoverSteps |
+| 附件 | Attachments | attachments |
 
 ### 优先级值映射（中文→英文）
 
@@ -62,6 +63,7 @@ COLUMN_MAPPING = {
     '实际结果': 'actualResult', 'Actual Result': 'actualResult',
     '复现率': 'reproduceRate', 'Reproduce Rate': 'reproduceRate',
     'Recover步骤': 'recoverSteps', 'Recover Steps': 'recoverSteps',
+    '附件': 'attachments', 'Attachments': 'attachments',
 }
 
 PRIORITY_ZH_MAP = {
@@ -75,7 +77,7 @@ REPRODUCE_RATE_ZH_MAP = {
 }
 
 TEXT_FIELDS = {'summary', 'timestamp', 'precondition', 'steps',
-               'expectedResult', 'actualResult', 'recoverSteps'}
+               'expectedResult', 'actualResult', 'recoverSteps', 'attachments'}
 
 def map_priority(value):
     if not value:
@@ -93,9 +95,14 @@ def map_reproduce_rate(value):
         return value
     return ''
 
+ALL_KNOWN_FIELDS = ['summary', 'priority', 'timestamp', 'precondition',
+                      'steps', 'expectedResult', 'actualResult',
+                      'reproduceRate', 'recoverSteps', 'attachments']
+
 def process_rows(rows):
     if not rows:
-        return {'items': [], 'unmappedColumns': [], 'totalRows': 0}
+        return {'items': [], 'unmappedColumns': [], 'missingColumns': [],
+                'totalRows': 0}
 
     headers = list(rows[0].keys())
     field_map = {}
@@ -108,11 +115,12 @@ def process_rows(rows):
         else:
             unmapped.append(trimmed)
 
+    mapped_fields = set(field_map.values())
+    missing = [f for f in ALL_KNOWN_FIELDS if f not in mapped_fields]
+
     items = []
     for row in rows:
-        defect = {f: '' for f in ['summary', 'priority', 'timestamp',
-                                    'precondition', 'steps', 'expectedResult',
-                                    'actualResult', 'reproduceRate', 'recoverSteps']}
+        defect = {f: '' for f in ALL_KNOWN_FIELDS}
         for header, field in field_map.items():
             value = str(row.get(header, '')).strip()
             if field == 'priority':
@@ -123,7 +131,8 @@ def process_rows(rows):
                 defect[field] = value
         items.append(defect)
 
-    return {'items': items, 'unmappedColumns': unmapped, 'totalRows': len(rows)}
+    return {'items': items, 'unmappedColumns': unmapped,
+            'missingColumns': missing, 'totalRows': len(rows)}
 
 def main():
     if len(sys.argv) < 2:
@@ -201,7 +210,7 @@ if __name__ == '__main__':
    python3 /tmp/defect-parse-excel.py "$FILE_PATH"
    ```
 
-5. 解析输出 JSON，提取 `items`、`unmappedColumns`、`totalRows`
+5. 解析输出 JSON，提取 `items`、`unmappedColumns`、`missingColumns`、`totalRows`
 
 6. 清理临时文件：
    ```bash

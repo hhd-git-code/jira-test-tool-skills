@@ -60,10 +60,10 @@ AskUserQuestion：
 - 问题 1："缺陷标题（Summary）" - 文本输入
 - 问题 2："优先级（Priority）" - 选项：Blocker / Critical / Major / Minor / Trivial
 - 问题 3："时间点（Timestamp）" - 文本输入
-- 问题 4："前提条件（Precondition）" - 文本输入
+- 问题 4："前提条件（Precondition）" - 文本输入（多条用分号分隔，如"条件1；条件2；条件3"）
 
 **第 2 轮**：
-- 问题 1："复现步骤（Steps）" - 文本输入（多行内容用 \\n 表示换行）
+- 问题 1："复现步骤（Steps）" - 文本输入（多条用分号分隔，如"步骤1；步骤2；步骤3"）
 - 问题 2："预期结果（Expected Result）" - 文本输入
 - 问题 3："实际结果（Actual Result）" - 文本输入
 
@@ -74,7 +74,27 @@ AskUserQuestion：
 
 如果用户选择了模板，已填写的字段显示当前值，用户可以直接确认保留或修改。
 
-#### 3A.3 翻译
+#### 3A.3 预处理：分行
+
+**Precondition 和 Steps 字段在翻译前必须先分行处理**：用户用分号（中文；或英文;）分隔多条内容，表示每条独立一行。
+
+处理规则：
+1. 将中文分号（；）统一替换为英文分号（;）
+2. 按英文分号（;）拆分字符串
+3. 去除每条的首尾空格
+4. 丢弃空字符串（如末尾多余分号产生的空条目）
+5. 翻译后每条单独一行，数字序号保持递增
+
+示例：
+```
+输入：1. 进入系统；2. 点击导航；3. 点击QQ音乐
+输出（英文）：
+1. Enter the system
+2. Click Navigation
+3. Click QQ Music
+```
+
+#### 3A.4 翻译
 
 1. 读取配置文件中的 customDict
 2. 将所有中文内容翻译为英文：
@@ -82,11 +102,12 @@ AskUserQuestion：
    - 其他内容由 Claude 翻译，保持技术术语一致性
    - Priority 值保持英文原文
    - ReproduceRate 值保持英文原文
+   - Precondition 和 Steps 按 3A.3 分行后，逐条翻译
 3. 中文优先级名称自动映射：阻塞→Blocker、严重→Critical、重要→Major、一般→Minor、轻微→Trivial
 4. 中文复现率自动映射：总是→Always、经常→Often、有时→Sometimes、很少→Rarely、无法复现→Unable to Reproduce
 5. 翻译风格：专业、简洁、符合软件缺陷报告英语习惯
 
-#### 3A.4 确认预览
+#### 3A.5 确认预览
 
 向用户展示翻译预览（中英对照表）：
 
@@ -100,7 +121,7 @@ AskUserQuestion：
 
 - AskUserQuestion：确认创建 / 修改内容 / 取消
 
-#### 3A.5 附件验证
+#### 3A.6 附件验证
 
 用户在第 3 轮 AskUserQuestion 中已输入附件路径，此步骤验证路径有效性：
 
@@ -114,7 +135,7 @@ AskUserQuestion：
    - 如果路径不存在：提示用户检查，跳过该路径
 4. 输出附件列表确认
 
-#### 3A.6 创建 JIRA 缺陷
+#### 3A.7 创建 JIRA 缺陷
 
 **所有 curl 命令模板见 [references/jira-defect-api.md](references/jira-defect-api.md)**
 
@@ -173,7 +194,22 @@ h2. Recover Steps
 
 字段为空时保留 section 标题和空的 `{noformat}` 块。
 
-#### 3A.7 保存模板（可选）
+**Precondition 和 Steps 的 {noformat} 内必须每条一行**，不可将所有条目挤在一行。示例：
+
+```
+h2. Precondition
+{noformat}1. System version: xxx
+2. Software version: yyy
+3. Test environment: bench
+4. Precondition: zzz{noformat}
+
+h2. Steps
+{noformat}1. Enter the system
+2. Click Navigation
+3. Click QQ Music{noformat}
+```
+
+#### 3A.8 保存模板（可选）
 
 1. AskUserQuestion 询问是否保存为模板
 2. 是 → AskUserQuestion 输入模板名称
@@ -193,49 +229,69 @@ AskUserQuestion 询问 Excel/CSV 文件路径
 2. 不可用时执行 `pip3 install --user openpyxl`
 3. 将 Python 解析脚本写入 `/tmp/defect-parse-excel.py`（脚本见 [references/excel-format.md](references/excel-format.md)）
 4. 用 Bash 执行 `python3 /tmp/defect-parse-excel.py "$FILE_PATH"`
-5. 解析输出 JSON，提取 `items`、`unmappedColumns`、`totalRows`
+5. 解析输出 JSON，提取 `items`、`unmappedColumns`、`missingColumns`、`totalRows`
 6. 清理临时文件 `rm /tmp/defect-parse-excel.py`
 7. 如果 `unmappedColumns` 不为空，列出未识别的列名
+8. 如果 `missingColumns` 不为空，列出 Excel 中缺失的列名（这些字段将为空，需在补全步骤中填写）
 
 #### 3B.3 预览确认
 
-1. 输出解析结果预览：总行数、识别的列名、未识别的列名
+1. 输出解析结果预览：总行数、识别的列名、未识别的列名、缺失的列名
 2. 显示前 5 行数据摘要（编号 + summary + priority）
 3. AskUserQuestion：全部创建 / 只创建部分 / 取消
 4. 如果"只创建部分"，AskUserQuestion 询问要创建哪些行号（如 "1, 3, 5-8"）
 
 #### 3B.4 必填项检查与补全
 
-1. 检查所有待创建缺陷的必填字段：summary、steps、expectedResult、actualResult 不能为空
-2. 识别空字段，输出缺失清单，如：
+1. 检查所有待创建缺陷的必填字段：summary、steps、expectedResult、actualResult、precondition、recoverSteps 不能为空
+2. 如果 Excel 中缺失对应列，对应字段全部为空，一并纳入缺失清单
+3. 输出缺失清单，如：
    ```
-   第 1 行「导航打不开」: 缺少 steps, expectedResult, actualResult
-   第 3 行「QQ音乐打不开」: 缺少 steps, expectedResult, actualResult
+   第 1 行「导航打不开」: 缺少 precondition, steps, expectedResult, actualResult, recoverSteps
+   第 3 行「QQ音乐打不开」: 缺少 precondition, steps, expectedResult, actualResult, recoverSteps
+   注意：Excel 中缺失列 [precondition, recoverSteps]，所有行这两个字段均为空
    ```
-3. 如果存在空字段，AskUserQuestion 询问如何处理：
+4. 如果存在空字段，AskUserQuestion 询问如何处理：
    - 逐条补全：对每条缺少必填项的缺陷，用 AskUserQuestion 逐轮收集缺失字段（规则同 3A.2，每轮最多 4 个问题）
    - 跳过空字段：保留为空，直接创建（description 中空字段保留空的 `{noformat}` 块）
    - 跳过这些行：不创建缺少必填项的缺陷
-4. 选择"逐条补全"时，对每条缺陷按缺失字段分轮收集：
-   - 如缺 1-4 个字段，1 轮完成
-   - 如缺 5-8 个字段，分 2 轮完成
+5. 选择"逐条补全"时，对每条缺陷按缺失字段分轮收集：
+   - 如缺 1-3 个字段，1 轮完成（含附件问题，共最多 4 个问题）
+   - 如缺 4 个及以上字段，分 2 轮完成
    - 已有字段显示当前值，用户确认保留或修改
+   - **每条补全时必须包含附件问题**："附件文件路径（可选，多个用逗号分隔，输入'无'跳过）"
 
-#### 3B.5 批量翻译和创建
+#### 3B.5 批量附件收集
+
+无论是否经过补全，**每条待创建的缺陷都必须询问附件**。为提高效率，先询问用户选择模式：
+
+1. AskUserQuestion 询问附件模式：
+   - 逐条指定：对每条缺陷逐个询问附件路径
+   - 批量指定：输入一个目录路径，该目录下的文件按缺陷序号自动匹配（如 `bug_1.png`、`bug_2.png`），未匹配的文件跳过
+   - 统一路径：所有缺陷使用相同的附件路径（文件或目录）
+   - 无附件：全部跳过附件
+
+2. 逐条指定时，对每条缺陷用 AskUserQuestion 询问附件路径（显示缺陷序号+标题，方便识别）
+3. 附件路径验证规则同 3A.6（文件→直接加入，目录→列出内容让用户选择，不存在→跳过）
+4. 最终输出每条缺陷的附件清单，供确认
+
+#### 3B.6 批量翻译和创建
 
 对每条缺陷：
-1. 翻译中文内容为英文（同 3A.3 翻译规则，应用 customDict + Claude 翻译）
+1. 翻译中文内容为英文（同 3A.3 预处理分行 + 3A.4 翻译规则，应用 customDict + Claude 翻译）
 2. 构造 wiki markup description（FROZEN 格式）
-3. 通过 curl 创建 JIRA Issue
-4. 立即输出进度：`[OK] 第 1/N 条: PROJ-123` 或 `[FAIL] 第 1/N 条: <error>`
-5. 单条失败不阻塞后续创建
+3. 通过 python3 urllib 创建 JIRA Issue
+4. 如果该条有附件，逐个上传（规则同 3A.7 步骤 7-8，上传失败不阻塞）
+5. 立即输出进度：`[OK] 第 1/N 条: PROJ-123 (+M attachments)` 或 `[FAIL] 第 1/N 条: <error>`
+6. 单条失败不阻塞后续创建
 
-#### 3B.6 报告结果
+#### 3B.7 报告结果
 
 1. 输出汇总：成功 N/M 条，列出失败的行号和原因
 2. 写入 `jira-defect-creation-report.md`，包含每个缺陷的：
    - 行号、标题（中文+英文）
    - JIRA Issue Key、Issue 链接
+   - 附件数量及文件名
    - 失败项的错误信息
 3. 如果有失败项，AskUserQuestion 询问是否重试
 
